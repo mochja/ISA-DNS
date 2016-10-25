@@ -7,3 +7,6 @@ services:
     stop_signal: SIGINT
     volumes:
       - .:/usr/src/myapp
+    ports:
+      - "53:53"
+      - "53:53/udp"

@@ -7,5 +7,6 @@ WORKDIR /usr/src/myapp
 COPY . /usr/src/myapp
 
 EXPOSE 53
+EXPOSE 53/udp
 
-CMD ["nodemon", "-e", ".py", "--exec", "bash -c", "./roughtDNS"]
+CMD ["nodemon", "-e", ".py", "--exec", "python", "./roughtDNS"]
