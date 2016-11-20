@@ -1,0 +1,13 @@
+# ISA-DNS
+
+Simple DNS server written in Python, supports A, MX, SOA queries and recursive queries through Google DNS over HTTPS service.
+
+## initial setup
+this step will install pip dependencies
+$ make
+
+## for usage
+$ ./roughtDNS --help
+
+## bundled files
+Makefile helpers.py roughtDNS readme config.py cli.py

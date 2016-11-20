@@ -4,4 +4,4 @@ all:
 	python3 -m pip install dnspython
 
 archive:
-	tar -cvf xmochn00.tgz Makefile helpers.py roughtDNS README.md config.py cli.py
+	tar -cvf xmochn00.tgz Makefile helpers.py roughtDNS readme config.py cli.py

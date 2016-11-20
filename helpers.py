@@ -16,8 +16,9 @@ import dns.rdataclass
 args = config.args
 
 QTYPES = {1:'A', 15: 'MX', 6: 'SOA'}
-custom_mx = uuid.uuid4().hex  
+custom_mx = uuid.uuid4().hex
 
+# https://github.com/shuque/pydig GNUv2 (edited)
 def txt2domainname(input, canonical_form=False):
     """turn textual representation of a domain name into its wire format"""
     if input == ".":
@@ -32,7 +33,7 @@ def txt2domainname(input, canonical_form=False):
             d += struct.pack('B', length) + label
     return d
 
-
+# https://github.com/shuque/pydig GNUv2 (edited)
 def get_domainname(pkt, offset):
     """decode a domainname at the given packet offset; see RFC 1035"""
     global count_compression
@@ -60,6 +61,7 @@ def get_domainname(pkt, offset):
 def ip2bytes(ip):
     return struct.pack('!BBBB', *map(int, ip.split('.')))
 
+# https://github.com/shuque/pydig GNUv2 (edited)
 def pdomainname(labels):
     """given a sequence of domainname labels, return a quoted printable text
     representation of the domain name"""
