@@ -1,4 +1,4 @@
-FROM python:3.3
+FROM python:3.4
 
 RUN curl -sL https://deb.nodesource.com/setup_6.x | bash -
 RUN apt-get install -y nodejs && npm install -g nodemon
