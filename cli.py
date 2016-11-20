@@ -10,8 +10,7 @@ import time
 import sys
 
 from helpers import *
-
-PORT=53
+from config import args
 
 class DNSRequest():
     
@@ -27,7 +26,6 @@ class DNSRequest():
             self.queries.append(q)
 
 class DNSRequestHandler(socketserver.BaseRequestHandler):
-    
     def parse_req(self):
         raise NotImplementedError
 
@@ -42,7 +40,6 @@ class DNSRequestHandler(socketserver.BaseRequestHandler):
             traceback.print_exc(file=sys.stderr)
 
 class TCPRequestHandler(DNSRequestHandler):
-    
     def parse_req(self):
         data = self.request.recv(4096).strip()
         
@@ -59,7 +56,6 @@ class TCPRequestHandler(DNSRequestHandler):
         return self.request.sendall(sz + data)
 
 class UDPRequestHandler(DNSRequestHandler):
-
     def parse_req(self):
         return DNSRequest(self.request[0].strip())
 
@@ -67,14 +63,13 @@ class UDPRequestHandler(DNSRequestHandler):
         return self.request[1].sendto(data, self.client_address)
 
 class ThreadingUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pass
-class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer): pass
+class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
 
 def main():
-    socketserver.TCPServer.allow_reuse_address = True
-
     servers = [
-        ThreadingUDPServer(('', PORT), UDPRequestHandler),
-        ThreadingTCPServer(('', PORT), TCPRequestHandler),
+        ThreadingUDPServer(('', args.port), UDPRequestHandler),
+        ThreadingTCPServer(('', args.port), TCPRequestHandler),
     ]
     for s in servers:
         thread = threading.Thread(target=s.serve_forever)

@@ -6,8 +6,17 @@ import time
 import sys
 import http.client
 import json
+import uuid
+
+import config
+
+import dns.rdatatype
+import dns.rdataclass
+
+args = config.args
 
 QTYPES = {1:'A', 15: 'MX', 6: 'SOA'}
+custom_mx = uuid.uuid4().hex  
 
 def txt2domainname(input, canonical_form=False):
     """turn textual representation of a domain name into its wire format"""
@@ -89,9 +98,6 @@ def resolve_remote(query):
     r1 = h1.getresponse()
     data = json.loads(r1.read().decode('utf-8'))
     
-    if data['Status'] is not 0:
-        raise Exception("Invalid Status")
-    
     answers = []
     if 'Answer' in data:
         for answer in data['Answer']:
@@ -103,50 +109,89 @@ def resolve_remote(query):
         for answer in data['Authority']:
             a = (answer['name'], answer['type'], klass, answer['TTL'], answer['data'])
             authority.append(a)
-        
-    return (answers, authority)
+
+    return (int(data['Status']), answers, authority)
+
+def resolve_fake(query, ip):
+    domainName, type, klass = query
+
+    answers = []
+    
+    if type not in [1, 15, 6]:
+        return (3, answers, [])
+
+    # sam sebe pan pri ostatnych
+    if type == 1:
+        a = (domainName, type, klass, 1, str(ip))
+        answers.append(a)
+
+    # sam sebe pan pri MX
+    if type == 15:
+        a = (domainName, type, klass, 1, '10 ' + domainName)
+        answers.append(a)
+
+    return (0, answers, [])
 
 def build_answer_data(answer):
     dn, type, cl, ttl, data = answer
     
     if type == 1:
-        print('r: {}, type: {}, class IN, addr'.format(dn, 'A', data))
+        print('r: {}, type: {}, class {}, addr {}'.format(dn, dns.rdatatype.to_text(type), dns.rdataclass.to_text(cl), data))
         return txt2domainname(dn) + struct.pack('!HHIH', type, cl, ttl, 4) + ip2bytes(data)
 
     if type == 15:
         priority, addr = data.split(' ', 2)
-        print('r: {}, type: {}, class IN, preference {}, mx {}'.format(dn, 'MX', priority, addr))
+        print('r: {}, type: {}, class {}, preference {}, mx {}'.format(dn, dns.rdatatype.to_text(type), dns.rdataclass.to_text(cl), priority, addr))
         addr = txt2domainname(addr)
         return txt2domainname(dn) + struct.pack('!HHIHH', type, cl, ttl, len(addr) + 2, int(priority)) + addr
     
     if type == 6:
         ns, hostmasta, serialNo, refresh, retry, expire, minTTL = data.split(' ')
-        print('r: {}, type: {}, class IN, mname {}'.format(dn, 'SOA', ns))
+        print('r: {}, type: {}, class {}, mname {}'.format(dn, dns.rdatatype.to_text(type), dns.rdataclass.to_text(cl), ns))
         soa = txt2domainname(ns) + txt2domainname(hostmasta) + struct.pack('!IIIII', *map(int, [serialNo, refresh, retry, expire, minTTL]))
         return txt2domainname(dn) + struct.pack('!HHIH', type, cl, ttl, len(soa)) + soa
-                
-            
+
+def resolve_zones(query, rr):
+    dn, type, klass = query
+    
+    normal = []
+    authoritative = []
+    
+    for r in rr:
+        a = (dn, r.rdtype, r.rdclass, rr.ttl, str(r).replace('\\@', '.'))
+        
+        if r.rdtype == 6:
+            authoritative.append(a)
+        else:
+            normal.append(a)
+        
+    return (0, normal, authoritative)
 
 def dns_response(request):
-    
-    flags = 0
-    flags |= 1 << 15 # set QR to (1) - Response
-    flags |= 1 << 8  # recursive flag
-    flags |= 1 << 7  # recursive flag
-    
-    id = struct.pack('!H', request.id)
-    flags = struct.pack('!H', flags)
-    qdcount = struct.pack('!H', 0)                       # 0 question
     answer = b''
     nswer = b''
-    
+    flags = 0
     ancount = 0
     nscount = 0
+    
+    status = 3 # default status not found
+    
     for q in request.queries:
         (dn, type, cl) = q
-        print('q: {}, type: {}, class IN'.format(dn, QTYPES[type]))
-        
-        normal, authoritative = resolve_remote(q)
+        print('q: {}, type: {}, class {}'.format(dn, dns.rdatatype.to_text(type), dns.rdataclass.to_text(cl)))
+            
+        rr = None
+        for zone in config.zones:
+            try:
+                rr = zone.find_rdataset(dn, type)
+                break
+            except: pass
+            
+        if rr is not None and len(args.mitm) == 0:
+            flags |= 1 << 10 # set authoritative
+            status, normal, authoritative = resolve_zones(q, rr)
+        else:
+            status, normal, authoritative = resolve_remote(q) if len(args.mitm) == 0 else resolve_fake(q, str(args.mitm[0]))
         
         for r in normal:
             ancount += 1
@@ -156,18 +201,26 @@ def dns_response(request):
             nscount += 1
             nswer += build_answer_data(r)
     
-    ancount = struct.pack('!H', ancount)    # answers
-    nscount = struct.pack('!H', nscount)          # 0 authority
+    flags |= 1 << 15 # set QR to (1) - Response
+    flags |= 1 << 7 # set QR to (1) - Response
+    flags |= 1 << 8 # set QR to (1) - Response
+    flags |= status
+    
+    id = struct.pack('!H', request.id)
+    flags = struct.pack('!H', flags)
+    qdcount = struct.pack('!H', 0)
+    ancount = struct.pack('!H', ancount)
+    nscount = struct.pack('!H', nscount)
     arcount = struct.pack('!H', 0)
 
     return id + flags + qdcount + ancount + nscount + arcount + \
         answer + nswer
 
 def parse_dns_record(rawdata, offset):
-        dn, offset = get_domainname(rawdata, offset)
-        dn = pdomainname(dn)
-        query_type, query_class = struct.unpack_from('!HH', rawdata, offset=offset)
-        offset += 10
-        query = dn, query_type, query_class
-        
-        return (offset, query)
+    dn, offset = get_domainname(rawdata, offset)
+    dn = pdomainname(dn)
+    query_type, query_class = struct.unpack_from('!HH', rawdata, offset=offset)
+    offset += 10
+    query = dn, query_type, query_class
+    
+    return (offset, query)
