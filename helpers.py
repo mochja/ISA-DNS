@@ -89,7 +89,7 @@ def resolve_remote(query):
     domainName, type, klass = query
     
     if type not in [1, 15, 6]:
-        return []
+        return (3, [], [])
     
     h1 = http.client.HTTPSConnection('dns.google.com')
     
@@ -141,15 +141,28 @@ def build_answer_data(answer):
 
     if type == 15:
         priority, addr = data.split(' ', 2)
+        
+        if not addr.endswith('.'):
+            addr += '.'
+        
         print('r: {}, type: {}, class {}, preference {}, mx {}'.format(dn, dns.rdatatype.to_text(type), dns.rdataclass.to_text(cl), priority, addr))
         addr = txt2domainname(addr)
-        return txt2domainname(dn) + struct.pack('!HHIHH', type, cl, ttl, len(addr) + 2, int(priority)) + addr
+        return txt2domainname(dn) + struct.pack('!HHIHH', type, cl, ttl, 2 + len(addr), int(priority)) + addr
     
     if type == 6:
         ns, hostmasta, serialNo, refresh, retry, expire, minTTL = data.split(' ')
+        
+        if not ns.endswith('.'):
+            ns += '.'
+        
+        if not hostmasta.endswith('.'):
+            hostmasta += '.'
+        
         print('r: {}, type: {}, class {}, mname {}'.format(dn, dns.rdatatype.to_text(type), dns.rdataclass.to_text(cl), ns))
         soa = txt2domainname(ns) + txt2domainname(hostmasta) + struct.pack('!IIIII', *map(int, [serialNo, refresh, retry, expire, minTTL]))
         return txt2domainname(dn) + struct.pack('!HHIH', type, cl, ttl, len(soa)) + soa
+    
+    raise Exception('cant create response for that')
 
 def resolve_zones(query, rr):
     dn, type, klass = query
@@ -187,11 +200,11 @@ def dns_response(request):
                 break
             except: pass
             
-        if rr is not None and len(args.mitm) == 0:
+        if rr is not None and args.mitm is None:
             flags |= 1 << 10 # set authoritative
             status, normal, authoritative = resolve_zones(q, rr)
         else:
-            status, normal, authoritative = resolve_remote(q) if len(args.mitm) == 0 else resolve_fake(q, str(args.mitm[0]))
+            status, normal, authoritative = resolve_remote(q) if args.mitm is None or type in [6] else resolve_fake(q, str(args.mitm[0]))
         
         for r in normal:
             ancount += 1
@@ -202,8 +215,8 @@ def dns_response(request):
             nswer += build_answer_data(r)
     
     flags |= 1 << 15 # set QR to (1) - Response
-    flags |= 1 << 7 # set QR to (1) - Response
-    flags |= 1 << 8 # set QR to (1) - Response
+    flags |= 1 << 7 # 
+    flags |= 1 << 8 # 
     flags |= status
     
     id = struct.pack('!H', request.id)
